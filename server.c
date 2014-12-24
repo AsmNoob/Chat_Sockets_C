@@ -11,78 +11,79 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <pthread.h>
 
 #define PORT 5555
 
 #define BACKLOG 20
 
-// // Option de socket
-// int setOptionSocket(int socket, int level, int optioName,const void *optionValue, int socketLength){
-// 	int state;
-// 	if ((state = setsockopt(socket,level,optioName,&optionValue,socketLength)) == -1) {
-// 	    printf("Serveur: setsockopt %d",socket);
-// 	    return EXIT_FAILURE; // or state
-// 	}
-// 	return state;
-// }
+// liste des sockets
+int list_sockets[100];
+// liste des disponibilités (1 = place disponible | 0 == place non-disponible)
+int availabilities[100] = {1};
+int sockets_counter = 0;
 
-// // Binding du socket
-// int bindSocket(int socket, struct sockaddr_in sockaddress){
-// 	sockaddress.sin_family = AF_INET;       
-// 	sockaddress.sin_port = htons(PORT);  
-// 	sockaddress.sin_addr.s_addr = INADDR_ANY; 
-// 	memset(&(sockaddress.sin_zero), '\0', 8); 
-// 	int state;
-// 	if ((state = bind(socket, (struct sockaddr *)&sockaddress,  sizeof(struct sockaddr))) == -1) {
-// 	    printf("Serveur: bind %d",socket);
-// 	    return EXIT_FAILURE; // or state
-// 	}
-// 	return state;
-// }
+const int8_t welcome[] = "Bienvenu, sur notre serveur de chat,\nchoisissez un pseudonyme: ";
 
+void* distribution(void* indice_socket){
+	int connected = 1;
+	char nickname[100];
 
-// int listenSocket(int socket,int backlog){
-// 	int state;
-// 	if ((state = listen(socket, backlog)) == -1) {
-// 	    printf("Serveur: listen %d",socket);
-// 	    return EXIT_FAILURE;
-//     }
-//     return state;
-// }
-
-int find_greater(int * list,int size){
-	int greater = 0,i = 0;
-	while( i < size){
-		printf("%sdn",list[i]);
-		if(list[i] > greater){
-			greater = list[i];
-		}
-		i++;
+	if(send(list_sockets[*(int*)indice_socket],welcome,sizeof(welcome),0) == -1){
+		perror("Server: recv");
+		pthread_exit(NULL);	
 	}
-	return greater;
+
+	if(recv(list_sockets[*(int*)indice_socket],nickname,sizeof(nickname),0) == -1){
+		perror("Server: recv");
+		pthread_exit(NULL);
+	}
+
+	printf("LOGIN: %s\n",nickname);
+
+	while(connected){
+		char buffer[2048];
+		if(recv(list_sockets[*(int*)indice_socket],buffer,sizeof(buffer),0) == -1){
+			perror("Server: recv");
+			connected = 0;
+		}	
+		printf("Reçu:%s.",buffer);
+		int index = 0;
+		while(index < sockets_counter-1){
+			printf("%d et %d", index, *(int*)indice_socket);
+			if(availabilities[index] == 0 && index != *(int*)indice_socket){
+				printf("Envoi:%s.", buffer );
+				if(send(list_sockets[index],buffer,sizeof(buffer),0) == -1){
+					perror("Server: recv");
+	    			connected = 0;	
+				}
+			}
+			index++;
+		}
+	}
+	close(list_sockets[*(int*)indice_socket]);
+	pthread_exit(NULL);	
 }
 
 int main(int argc, char const *argv[]){
 	// Initialisation des variables nécéssairesse
-	fd_set readfds,writefds;
-	int max, sockfd1, sockfd2, sockfd3, yes=1, new_fd;
-	// their address information
+	//fd_set readfds;
+	int new_fd, socket_s, yes=1;
+	// server address information
 	struct sockaddr_in my_addr;    
-    // my address information
+    // client address information
   	struct sockaddr_in their_addr;
 
-  	int list_sockets[3];
-
-  	unsigned int sin_size = sizeof(struct sockaddr_in);
+  	//unsigned int sin_size = sizeof(struct sockaddr_in);
 
 	// Initialisation du 1er socket. S'occupe des accept()
-	if ((sockfd1 = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
-		perror("Serveur: socket 1");
+	if ((socket_s = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
+		perror("server: socket 1");
 		return EXIT_FAILURE;
 	}
 
-	if (setsockopt(sockfd1,SOL_SOCKET,SO_REUSEADDR, &yes,sizeof(int)) == -1) {
-		perror("Serveur: setsockopt 1");
+	if (setsockopt(socket_s,SOL_SOCKET,SO_REUSEADDR, &yes,sizeof(int)) == -1) {
+		perror("server: setsockopt 1");
 		return EXIT_FAILURE;
 	}
 
@@ -91,96 +92,171 @@ int main(int argc, char const *argv[]){
 	my_addr.sin_addr.s_addr = INADDR_ANY;
 	memset(&(my_addr.sin_zero), '\0', 8);
 
-	if (bind(sockfd1, (struct sockaddr *)&my_addr,  sizeof(struct sockaddr)) == -1) {
-		perror("Serveur: bind 1");
+	if (bind(socket_s, (struct sockaddr *)&my_addr,sizeof(struct sockaddr)) == -1) {
+		perror("server: bind 1");
 		return EXIT_FAILURE;
 	}
 
-	if (listen(sockfd1, BACKLOG) == -1) {
-		perror("Serveur: listen 1");
+	if (listen(socket_s, BACKLOG) == -1) {
+		perror("server: listen 1");
 		return EXIT_FAILURE;
 	}
-
-	sin_size = sizeof(struct sockaddr_in);
-
-	//Initialisation du 2eme socket. S'occupe des w
-	if ((sockfd2 = socket(PF_INET,	SOCK_STREAM, 0)) == -1) {
-		perror("Serveur: socket 2");
-		return EXIT_FAILURE;
-	}
-
-	if (setsockopt(sockfd2,SOL_SOCKET,SO_REUSEADDR, &yes,sizeof(int)) == -1) {
-		perror("Serveur: setsockopt 2");
-		return EXIT_FAILURE;
-	}
-	    
-	my_addr.sin_family = AF_INET;        
-	my_addr.sin_port = htons(PORT);   
-	my_addr.sin_addr.s_addr = INADDR_ANY;
-	memset(&(my_addr.sin_zero), '\0', 8);
-
-	if (bind(sockfd2, (struct sockaddr *)&my_addr, sizeof(struct sockaddr)) == -1) {
-		perror("Serveur: bind 2");
-		return EXIT_FAILURE;
-	}
-
-	if (listen(sockfd2, BACKLOG) == -1) {
-		perror("Serveur: listen 2");
-		return EXIT_FAILURE;
-	}
-
-	if ((sockfd3 = socket(PF_INET,	SOCK_STREAM, 0)) == -1) {
-		perror("Serveur: socket 2");
-		return EXIT_FAILURE;
-	}
-
-	if (setsockopt(sockfd3,SOL_SOCKET,SO_REUSEADDR, &yes,sizeof(int)) == -1) {
-		perror("Serveur: setsockopt 3");
-		return EXIT_FAILURE;
-	}
-	    
-	my_addr.sin_family = AF_INET;        
-	my_addr.sin_port = htons(PORT);   
-	my_addr.sin_addr.s_addr = INADDR_ANY;
-	memset(&(my_addr.sin_zero), '\0', 8);
-
-	if (bind(sockfd3, (struct sockaddr *)&my_addr, sizeof(struct sockaddr)) == -1) {
-		perror("Serveur: bind 3");
-		return EXIT_FAILURE;
-	}
-
-	if (listen(sockfd3, BACKLOG) == -1) {
-		perror("Serveur: listen 3");
-		return EXIT_FAILURE;
-	}
-
-
+	
 	while(1){
-		
-		// Initialisation des fd_set
-		// FD_ZERO(readfds&);
-		// FD_ZERO(writefds&);
-		FD_SET(sockfd1, &readfds);
-		FD_SET(sockfd2, &readfds);
-		FD_SET(sockfd3, &writefds);
+		printf("//----------------LOOOP-----------------//\n");
+		pthread_t thread;
+		//int *sock;
+		//sock = malloc(1);
+		int length = sizeof(struct sockaddr_in);
 
-		// calcul de l'identifiant de socket e plus grand (pour savoir sur quoi il doit écouter)
-
-  		max = find_greater(list_sockets,3); // max_des _fd+1 
-
-  		printf("%d\n",max);
-
-		 //int  select( int  n, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,  struct  timeval *timeout);
-
-		select(max+1, &readfds, &writefds, NULL, NULL); // Lancement de select et comme prévu le writefds,exceptfds,et timout sont à NULL (donc par défaut)
-
-		//Vu que le select va se réveiller mai 	 		s on ne sait pas par qui, on test quel est lesocket qui l'a réveillé
-
-		if (FD_ISSET(sockfd1, &readfds)){
-			new_fd = accept(sockfd1,(struct sockaddr *)&their_addr,&sin_size);
+		if((new_fd = accept(socket_s,(struct sockaddr *)&their_addr,&length)) == -1){
+			perror("server: accept");
+		}
+		//*sock = new_fd;
+		printf("Nouvelle connection sur le server\n");
+		printf("new_fd: %d\n",new_fd );
+		int availability_counter = 0;
+		int find_spot = 0;
+		int indice_socket;
+		// On va regarder si un spot a été libéré
+		while(availability_counter < sockets_counter && find_spot == 0){
+			printf("ON RENTRE avec counter: %d\n", sockets_counter);
+			if(availabilities[availability_counter] == 1){
+				list_sockets[availability_counter] = new_fd;
+				availabilities[availability_counter] = 0;
+				indice_socket = availability_counter;
+				find_spot = 1;
+			}
+			availability_counter++;
+		}
+		// no available
+		if(find_spot == 0 && sockets_counter < 100){
+			printf("ON RENTRE DANS LE BON, couter: %d\n",sockets_counter);
+			list_sockets[sockets_counter] = new_fd;
+			availabilities[sockets_counter] = 0;
+			indice_socket = sockets_counter;
+			sockets_counter++;
 		}
 
-		else if(FD_ISSET(sockfd2, &readfds)){}
+		printf("avail[%d]: %d\n",sockets_counter-1, availabilities[sockets_counter-1] );
+		printf("sockets_counter[%d]: %d\n",sockets_counter-1, list_sockets[sockets_counter-1]);
+
+
+
+		if(pthread_create(&thread,NULL,distribution,(void *) &indice_socket ) != 0){
+			perror("Server: pthread_create(sending)");
+    		return EXIT_FAILURE;
+		}
+
+
+
+		// pid = fork();
+		// if(pid == 0){
+		// 	printf("//----------Processus Fils ----------//\n");
+		// 	close(socket_s);
+		// 	int sock = new_fd;
+		// 	int connected = 1;
+		// 	int indice = 0;
+		// 	while( indice < sockets_counter){
+		// 		printf("list[%d]: %d\n",indice,list_sockets[indice] );
+		// 		indice++;
+		// 	}
+
+		// 	while(connected){
+		// 		char buffer[4096];
+		// 		printf(" fd:%d\n", new_fd);
+		// 		if(recv(sock,buffer,sizeof(buffer),0) == -1){
+		// 			perror("Server: recv");
+	 //    			return EXIT_FAILURE;
+		// 		}
+		// 		int index = 0;
+		// 		while(index < sockets_counter){
+		// 			printf("ON RENTRE\n");
+		// 			if(availabilities[index] == 0){
+		// 				if(send(list_sockets[index],buffer,sizeof(buffer),0) == -1){
+		// 					perror("Server: recv");
+		// 	    			return EXIT_FAILURE;
+		// 				}
+		// 			}
+		// 			index++;
+		// 		}
+		// 	}
+		// }
+
+	  	// list_sockets[0] = socket_s;
+	  	// list_sockets[1] = sockfd2;
+	  	// list_sockets[2] = sockfd3;
+
+		// Initialisation des fd_set
+		// FD_ZERO(&readfds);
+		// int counter = 0;
+		// while(counter < sockets_counter){
+		// 	FD_SET(list_sockets[counter], &readfds);
+		// 	counter++;
+		// }
+		// calcul de l'identifiant de socket e plus grand (pour savoir sur quoi il doit écouter)
+
+  		//max = find_greater(list_sockets,sockets_counter); // max_des _fd+1 
+
+		 //int  select( int  n, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,  struct  timeval *timeout);
+  // 		printf("AVANT SELECT\n");
+		// if(select(max+1, &readfds, NULL, NULL, NULL) == -1){ // Lancement de select et comme prévu le writefds,exceptfds,et timout sont à NULL (donc par défaut)
+		// 	perror("server: select");
+		// 	return EXIT_FAILURE;
+		// }else{
+		// 	printf("SELECT WENT WELL\n");
+		// 	if(FD_ISSET(list_sockets[0],&readfds)){
+		// 		printf("ACCEPTED\n");
+		// 		if(new_fd = accept(socket_s,(struct sockaddr *)&their_addr,&sin_size) == -1){
+		// 			perror("server: accept");
+		// 		}
+		// 		printf("new_fd: %d\n",new_fd );
+		// 		sockets_counter+=1;
+		// 		list_sockets[sockets_counter-1] = new_fd;
+		// 		printf("sockets_counter[sockets_counter]: %d\n", list_sockets[sockets_counter-1]);
+		// 	}else{
+		// 		counter = 0;
+		// 		while(counter < sockets_counter){
+		// 			if(FD_ISSET(list_sockets[counter],&readfds)){
+		// 				printf("READ\n");
+		// 			}
+		// 			counter++;
+		// 		}
+		// 	}
+				
+		// }
+		//Vu que le select va se réveiller mais on ne sait pas par qui, on test quel est lesocket qui l'a réveillé
+
+		// if (FD_ISSET(socket_s, &readfds)){
+		// 	printf("lol1\n");
+		// 	if((new_fd = accept(socket_s,(struct sockaddr *)&their_addr,&sin_size) == -1){
+		// 		perror("server: accept");
+		// 	}
+
+		// 	if(fork() === 0){
+		// 		char buffer[4096];
+
+		// 		if(send(new_fd,buffer,sizeof(buffer),0) == -1){
+		// 	  		perror("Server: send");
+		// 	    	return EXIT_FAILURE;
+		// 	  	}
+
+		// 	  	printf("envoyé: %s\n", buffer);
+
+		// 		if(recv(new_fd,buffer,sizeof(buffer),0) == -1){
+		// 			perror("Server: recv");
+	 //    			return EXIT_FAILURE;
+		// 		}
+
+		// 		printf("reçu:%s\n", buffer);
+		// 	}
+		// 	close(socket_s);
+
+		// }else if(FD_ISSET(sockfd2, &readfds)){
+		// 	printf("lol2\n");
+		// }else if (FD_ISSET(sockfd3, &writefds)){
+		// 	printf("lol3\n");
+		// }
 
 		//Il suffit ensuite d'accept le bon socket et effectuer le service désiré dessus dans un fork pour laisser la boucle se finir et relancer le select.
 
