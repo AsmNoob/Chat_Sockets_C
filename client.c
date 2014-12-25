@@ -20,46 +20,38 @@
 #define PORT 5555
 
 int connected = 1;
-//char pseudo[100];
+char pseudo[100];
 
 void* sending(void* sockfd_c){
-	printf("//----IN SENDING-----//\n");
-
+	strtok(pseudo, "\n"); 
 	while(connected){
 		char str[2048];
+		size_t length = 0;
 
-		fgets(str, sizeof(str), stdin);
+		do{
+			fflush(stdout);
+			fgets(str, sizeof(str), stdin);
+			length = strlen(str)-1;
+		}while(length == 0);
 
-		int i = 0;
-		while(i < sizeof(str)){
-			printf("str[%d]: %s\n",i,str[i]);
-			i++;
-		}
-
-		char quit[] = "/quit";
-        // printf("Envoi:%s.", message);
-		printf("condition: %d\n", strcmp(str,quit));
-		if(strcmp(str,quit) == 0){
-			connected = 0;
-		}else if(send(*(int*)sockfd_c,str,sizeof(str),0) == -1){
+		if(send(*(int*)sockfd_c,str,sizeof(str),0) <= 0){
 	  		perror("Client: send2");
 	    	connected = 0;
 		}
-		//memset(message ,0,sizeof(message));
+		memset(str ,0,strlen(str));
 	}
-	printf("SORTIE DE SEND\n");
 	pthread_exit(NULL);
 }
 
 void* receiving(void* sockfd_c){
-	printf("//----IN RECEIVING-----//\n");
 	while(connected){
 		char buffer[2048];
-		if(recv(*(int*)sockfd_c,buffer,sizeof(buffer),0) == -1){
+		if(recv(*(int*)sockfd_c,buffer,sizeof(buffer),0) <= 0){
 	  		perror("Client: recv");
 	    	connected = 0;
 	  	}
-	  	printf("Recu: %s.",buffer);
+	  	printf("%s\n",buffer);
+	  	fflush(stdout);
 	}
 	pthread_exit(NULL);
 }
@@ -74,19 +66,16 @@ int main(int argc, char const *argv[])
 	int sockfd_c;
 	char name[100];
 
-	if(gethostname(name, sizeof(name))==-1) {
-	    perror("gethostname: ");
-	    return EXIT_FAILURE;  
-	}
+	if (argc != 2) {
+        fprintf(stderr, "Donner le nom de la machine distante en argument.");
+        return EXIT_FAILURE;
+    }
 
-	if ((host=gethostbyname(name)) == NULL) { 
+	if ((host=gethostbyname(argv[1])) == NULL) { 
 	    herror("gethostbyname: ");
 	    return EXIT_FAILURE;
 	}
 	  
-	printf("Host name  : %s\n", name);
-	printf("IP Address : %s\n", inet_ntoa(*((struct in_addr *)host->h_addr)));
-
 	if((sockfd_c = socket(PF_INET, SOCK_STREAM,0)) == -1){
 		perror("Client: socket");
 		return EXIT_FAILURE;
@@ -110,13 +99,17 @@ int main(int argc, char const *argv[])
 		perror("Client: recv");
 		return EXIT_FAILURE;
 	}
+	size_t length;
 
-	printf("%s", intro);
+	do{
+		printf("%s", intro);
+		fgets(pseudo,sizeof(pseudo), stdin);
+		length = strlen(pseudo)-1;
+	}while(length == 0);
 
-	char response[100];
-	fgets(response, sizeof(response), stdin);
+	//fflush(stdin);
 
-	if(send(sockfd_c,strtok(response, "\n"),sizeof(response),0) == -1){
+	if(send(sockfd_c,pseudo,strlen(pseudo)-1,0) == -1){
 		perror("Client: send1");
 		return EXIT_FAILURE;
 	}

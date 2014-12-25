@@ -28,35 +28,63 @@ const int8_t welcome[] = "Bienvenu, sur notre serveur de chat,\nchoisissez un ps
 void* distribution(void* indice_socket){
 	int connected = 1;
 	char nickname[100];
+	char buffer[2048];
+	char hour[5];
+	time_t date;
 
-	if(send(list_sockets[*(int*)indice_socket],welcome,sizeof(welcome),0) == -1){
+	printf("SOCKET: %d\n", list_sockets[*(int*)indice_socket]);
+
+	if(send(list_sockets[*(int*)indice_socket],welcome,strlen(welcome),0) == -1){
 		perror("Server: recv");
 		pthread_exit(NULL);	
 	}
 
-	if(recv(list_sockets[*(int*)indice_socket],nickname,sizeof(nickname),0) == -1){
+	if(recv(list_sockets[*(int*)indice_socket],nickname,sizeof(nickname),0) <= 0){
 		perror("Server: recv");
 		pthread_exit(NULL);
 	}
 
 	printf("LOGIN: %s\n",nickname);
 
-	while(connected){
-		char buffer[2048];
-		if(recv(list_sockets[*(int*)indice_socket],buffer,sizeof(buffer),0) == -1){
+
+	while(connected){	
+		
+		if(recv(list_sockets[*(int*)indice_socket],buffer,sizeof(buffer),0) <= 0){
 			perror("Server: recv");
 			connected = 0;
-		}	
+		}
+
+		date = time(NULL);
+		char* complete = ctime(&date);
+		int i = 11;
+		while(i < 16){
+			hour[i-11] = complete[i];
+			i++;
+		}
+
 		printf("Reçu:%s.",buffer);
 		int index = 0;
-		while(index < sockets_counter-1){
-			printf("%d et %d", index, *(int*)indice_socket);
-			if(availabilities[index] == 0 && index != *(int*)indice_socket){
+		while(index < sockets_counter){
+			printf("%d et %d\n", index, *(int*)indice_socket);
+			if(availabilities[index] == 0){
 				printf("Envoi:%s.", buffer );
-				if(send(list_sockets[index],buffer,sizeof(buffer),0) == -1){
+				// l'heure exacte
+				char new_buffer[2158];
+
+				strcat(new_buffer,"[");
+				strcat(new_buffer,hour);
+				strcat(new_buffer,"]:");
+				strcat(new_buffer,nickname);
+				strcat(new_buffer,": ");
+				strcat(new_buffer,buffer);
+
+				printf("%s\n",new_buffer );
+
+				if(send(list_sockets[index],new_buffer,strlen(new_buffer)-1,0) == -1){
 					perror("Server: recv");
 	    			connected = 0;	
 				}
+				memset(new_buffer, 0,strlen(new_buffer));
 			}
 			index++;
 		}
@@ -73,6 +101,8 @@ int main(int argc, char const *argv[]){
 	struct sockaddr_in my_addr;    
     // client address information
   	struct sockaddr_in their_addr;
+
+  	pthread_t list_thread[100];
 
   	//unsigned int sin_size = sizeof(struct sockaddr_in);
 
@@ -105,6 +135,7 @@ int main(int argc, char const *argv[]){
 	while(1){
 		printf("//----------------LOOOP-----------------//\n");
 		pthread_t thread;
+
 		//int *sock;
 		//sock = malloc(1);
 		int length = sizeof(struct sockaddr_in);
@@ -141,6 +172,7 @@ int main(int argc, char const *argv[]){
 		printf("avail[%d]: %d\n",sockets_counter-1, availabilities[sockets_counter-1] );
 		printf("sockets_counter[%d]: %d\n",sockets_counter-1, list_sockets[sockets_counter-1]);
 
+		list_thread[indice_socket] = thread;
 
 
 		if(pthread_create(&thread,NULL,distribution,(void *) &indice_socket ) != 0){
@@ -263,6 +295,10 @@ int main(int argc, char const *argv[]){
 
 
 
+	}
+	int j = 0;
+	while(j < sockets_counter){
+		pthread_join(list_thread[j],NULL);
 	}
 	return 0;
 }
